@@ -1,20 +1,19 @@
-<html>
-<head>
-<title>
-Crosswalk Sample Application
-</title>
-</head>
-<body>
-<div style="text-align:center;margin:100">
-<img src='sampapp-icon-helloworld.png'/>
-</div>
-<div style="text-align:center;margin:50;font-size:64;font-weight:bold">
-Welcome to Crosswalk
-</div>
-<div style="text-align:center;margin:20;font-size:48">
-A perfect way for writing<br>
-stand-alone web applications<br>
-for Android
-</div>
-</body>
-</html>
+<!DOCTYPE html>
+ <html>
+    <head>
+        <title>Device Properties Example</title>
+        <script type="text/javascript">
+            function onDocumentReady() {
+                var element = document.getElementById('deviceProperties');
+                element.innerHTML = 'Device Crosswalk: '  + device.crosswalk  + '<br />' +
+                    'Device Platform: ' + device.platform + '<br />' +
+                    'Device UUID: '     + device.uuid     + '<br />' +
+                    'Device Model: '    + device.model    + '<br />' +
+                    'Device Version: '  + device.version  + '<br />';
+            }
+        </script>
+    </head>
+    <body onload = "onDocumentReady()">
+        <p id="deviceProperties">Loading device properties...</p>
+    </body>
+ </html>

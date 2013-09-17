@@ -19,6 +19,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.xwalk.runtime.XWalkRuntimeViewProvider;
 
+import org.xwalk.runtime.extension.api.Device;
+
 /**
  * This internal class acts a manager to manage extensions.
  */
@@ -92,13 +94,13 @@ public class XWalkExtensionManager {
         // Create all extension instances directly here. The internal extension will register
         // itself and add itself to XWalkExtensionManager.mExtensions automatically.
         // The following sample shows how to create an extension that named Device:
-        //    String jsApiContent = "";
-        //    try {
-        //        jsApiContent = getAssetsFileContent(mContext.getAssets(), Device.JS_API_PATH);
-        //    } catch(IOException e) {
-        //        Log.e(TAG, "Failed to read js API file of internal extension: Device");
-        //    }
-        //    new Device(jsApiContent, mExtensionContextImpl);
+        String jsApiContent = "";
+        try {
+            jsApiContent = getAssetsFileContent(mContext.getAssets(), Device.JS_API_PATH);
+        } catch(IOException e) {
+            Log.e(TAG, "Failed to read js API file of internal extension: Device");
+        }
+        new Device(jsApiContent, mExtensionContextImpl);
     }
 
     private void loadExternalExtensions() {
