@@ -14,6 +14,7 @@ import org.xwalk.app.XWalkRuntimeActivityBase;
 public class AppTemplateActivity extends XWalkRuntimeActivityBase {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        super.setRemoteDebugging(true);
         super.onCreate(savedInstanceState);
     }
 

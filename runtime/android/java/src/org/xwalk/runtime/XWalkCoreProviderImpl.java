@@ -31,6 +31,7 @@ class XWalkCoreProviderImpl extends XWalkRuntimeViewProvider {
         // TODO(yongsheng): do customizations for XWalkView. There will
         // be many callback classes which are needed to be implemented.
         mXwalkView = new XWalkView(context, activity);
+        XWalkView.enableRemoteDebugging();
         super.init(context, activity);
     }
 
