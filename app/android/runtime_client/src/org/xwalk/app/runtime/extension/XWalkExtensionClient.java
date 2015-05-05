@@ -132,6 +132,7 @@ public class XWalkExtensionClient {
      * @param message the message from JavaScript code.
      */
     public void onMessage(int extensionInstanceID, String message) {
+      //TODO: logic to parse message
     }
 
     /**
@@ -142,10 +143,21 @@ public class XWalkExtensionClient {
      * @param message the message from JavaScript code.
      */
     public String onSyncMessage(int extensionInstanceID, String message) {
+        //TODO: logic to parse sync message
         return "";
     }
 
+    public void invokeJsMethod() {
+    }
 
+    public void invokeJsCallback() {
+    }
+
+    public void getJsProperty() {
+    }
+
+    public void setJsProperty() {
+    }
     /**
      * Post messages to JavaScript via extension's context.
      * It's used by child classes to post message from Java side
