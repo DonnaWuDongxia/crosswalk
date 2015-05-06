@@ -97,7 +97,7 @@ function isSerializable(obj) {
   return true;
 }   
   
-function objectRef(cid, vid) {                                                                                                                                            
+function objectRef(cid, vid) {
   return (cid << 8) + vid;
 }   
 
@@ -108,8 +108,9 @@ jsStub.prototype = {
       args = Array(args);
     }
 
+    // Retain callbacks in JS stub, replace them to related number ID
     var call = [];
-    args.forEach(function(val, vid, a) {                                                                                                                                            
+    args.forEach(function(val, vid, a) {
       if (!isSerializable(val)) {
         call[vid] = val;
         a[vid] = objectRef(cid, vid);
@@ -117,7 +118,7 @@ jsStub.prototype = {
     })
 
     var cid = 0;
-    if (call.length) {
+    if (call.length > 0) {
       cid = this.getCallbackId();
       this.callbacks[cid] = call;
     }
@@ -135,7 +136,7 @@ jsStub.prototype = {
     });
   },
   "setNativeProperty": function(name, value) {
-    postMessage({
+    result = sendSyncMessage({
       cmd: "setProperty",
       name: name,
       value: value
@@ -147,8 +148,25 @@ jsStub.prototype = {
       value: value
     });
   },
-  "invokeCallback": function() {},
-  "destoryNative": function() {}
+  "invokeCallback": function(cid, key, args) {
+      var cid = id >>> 8;
+      var vid = id & 0xFF;
+      var obj = this.callbacks[cid][vid];
+      if (typeof(key) === 'number' || key instanceof Number)
+          obj = obj[key];
+      else if (typeof(key) === 'string' || key instanceof String)
+          key.split('.').forEach(function(p){ obj = obj[p]; });
+
+      if (obj instanceof Function)
+          obj.apply(null, args);
+  },
+  "releaseArguments": function(cid) {
+      if (cid) {
+          delete this.calls[cid];
+          this.lastCallID = cid;
+      }
+  },
+  "destory": function() {}
 };
  
 exports.setMessageListener(function(json){
@@ -157,17 +175,12 @@ exports.setMessageListener(function(json){
      return;
    }
    switch (msg.cmd) {
-     case "invokeJsCallback":
-       msg
+     case "invokeCallback":
+       this.invokeCallback(msg.cid, msg.key, msg.args);
        break;
-     case "promiseResolve":
-       msg.
+     case "setProperty":
        break;
-     case "invokeJsMethod":
-       break;
-     case "setJsProperty":
-       break;
-     case "destoryJs":
+     case "destory":
        break;
      default:
    }
