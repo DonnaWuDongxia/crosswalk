@@ -24,6 +24,8 @@ exports = jsStub = function (isConstructor) {
   var nextCallbackId = 1;
   var instanceId = 1;
   this.isConstructor = !!(insConstructor);
+  //retain the properties which is exposed by native
+  this.properties = [];
   this.callbacks = [];
   this.getCallbackId() {
     while (this.callbacks[nextCallbackId] != undefined)
@@ -160,25 +162,25 @@ jsStub.prototype = {
       if (obj instanceof Function)
           obj.apply(null, args);
   },
-  "releaseArguments": function(cid) {
-      if (cid) {
-          delete this.calls[cid];
-          this.lastCallID = cid;
-      }
-  },
   "destory": function() {}
 };
  
 exports.setMessageListener(function(json){
    var msg = JSON.parse(json);
-   if (msg.error) {
-     return;
-   }
    switch (msg.cmd) {
      case "invokeCallback":
        this.invokeCallback(msg.cid, msg.key, msg.args);
        break;
-     case "setProperty":
+     case "updateProperty":
+       // Case: property is changed by native and need
+       // to sync its value to JS side.
+       if(this.properties.indexOf(msg.name) >= 0) {
+         this[msg.name] = msg.value;
+       }
+       break;
+     case "error":
+       // supported key: log, info, warn, error
+       console[msg.type](msg.msg);
        break;
      case "destory":
        break;
@@ -198,8 +200,8 @@ exports.defineProperty = function defineProperty(obj, prop, value, isWritable) {
         Object.defineProperty(object, prop, {
             "configurable": false,
             "enumerable": true,
-            "get": function() {return getNativePropety(prop);},
-            "set": function() {setNativeProperty(prop, value);};
+            "get": function() {return this.getNativeProperty(prop);},
+            "set": function() {this.setNativeProperty(prop, value);};
         })
     }
 }

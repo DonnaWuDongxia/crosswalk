@@ -147,17 +147,16 @@ public class XWalkExtensionClient {
         return "";
     }
 
-    public void invokeJsMethod() {
+    public void invokeJsCallback(int cid, String key, JSONObject args) {
+      //{
+      //  cmd:"invokeCallback"
+      //  cid: unit32
+      //  key: String
+      //  args: args
+      //}
+      postMessage();
     }
 
-    public void invokeJsCallback() {
-    }
-
-    public void getJsProperty() {
-    }
-
-    public void setJsProperty() {
-    }
     /**
      * Post messages to JavaScript via extension's context.
      * It's used by child classes to post message from Java side
