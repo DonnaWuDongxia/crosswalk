@@ -5,6 +5,11 @@
 package org.xwalk.app.runtime.extension;
 
 import android.content.Intent;
+import android.util.Log;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * This class is to encapsulate the reflection detail of
@@ -26,6 +31,22 @@ public class XWalkExtensionClient {
 
     // The context used by extensions.
     protected XWalkExtensionContextClient mExtensionContext;
+
+    // Reflection for JS stub generation
+    protected ReflectionHelper mirror;
+
+    //TODO: Walkaround for invokeJsCallback
+    protected int instanceId;
+
+    /**
+     * Constructor for extensions need to auto generate jsApi.
+     * @param name the extension name.
+     * @param apiVersion the version of API.
+     * @param context the extension context.
+     */
+    public XWalkExtensionClient(String name, XWalkExtensionContextClient context) {
+        this(name, null, null, context);
+    }
 
     /**
      * Constructor with the information of an extension.
@@ -50,11 +71,18 @@ public class XWalkExtensionClient {
      */
     public XWalkExtensionClient(String name, String jsApi, String[] entryPoints, XWalkExtensionContextClient context) {
         assert (context != null);
+        Log.e(name, "[Extension JSapi] " + jsApi);
         mName = name;
         mJsApi = jsApi;
         mEntryPoints = entryPoints;
         mExtensionContext = context;
         mExtensionContext.registerExtension(this);
+        mirror = new ReflectionHelper(this.getClass());
+
+        if (mJsApi == null || mJsApi.length() == 0) {
+            mJsApi = new JsStubGenerator(mirror).generate();
+        }
+        Log.e(name, "[Extension JSapi] " + mJsApi);
     }
 
     /**
@@ -124,6 +152,54 @@ public class XWalkExtensionClient {
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
     }
 
+    private Object objToSerializable(Object obj) {
+        //We expect the object is JSONObject or primive type.
+        //TODO: convert common object to serializable object
+        if (obj instanceof String)
+            obj = "\"" + obj + "\"";
+        return obj;
+    }
+
+    /**
+     * Serialize Java object to JSONObject
+     */
+    private String objJsonStringify(Object obj) {
+        //We expect the object is JSONObject currently.
+        //TODO: convert common object to JSON
+
+        Object sObj = objToSerializable(obj);
+        return sObj.toString();
+    }
+
+ /*   Object[] getArgsFromJson(JSONArray args) {
+        //TODO: convert JSON args to Java object[]
+        Log.e("json2Obj", "***args:" + args);
+        Object[] oArgs = new Object[args.length()];
+            for (int i = 0; i < args.length(); i++) {
+                try{
+                    oArgs[i] = args.get(i);
+                    Log.e("json2Obj", "***args[i]:" + oArgs[i]);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        return oArgs;
+    }
+    */
+
+    /*
+     * For "invokeJsCallback", pass java object to JS.
+     */
+    JSONArray argsToSerializable(Object... args) {
+        JSONArray jsonArray = new JSONArray();
+        Object o;
+        for (int i = 0; i < args.length; i++) {
+            o = objToSerializable(args[i]);
+            jsonArray.put(o);
+        }
+        return jsonArray;
+    }
+
     /**
      * JavaScript calls into Java code. The message is handled by
      * the extension implementation. The inherited classes should
@@ -132,6 +208,29 @@ public class XWalkExtensionClient {
      * @param message the message from JavaScript code.
      */
     public void onMessage(int extensionInstanceID, String message) {
+        String TAG = mName;
+        try {
+            JSONObject m = new JSONObject(message);
+            Log.e(TAG, "async Message:" + message);
+            String cmd = m.getString("cmd");
+            switch (cmd) {
+                case "invokeNative":
+                    String mName = m.getString("name");
+                    //Object[] args = getArgsFromJson(m.getJSONArray("args"));
+                    mirror.invokeMethod(this, mName, m.getJSONArray("args"));
+                    break;
+                case "newInstance":
+                    //TODO: support constructor
+                    break;
+                default:
+                    Log.w(TAG, "Unsupported cmd: " + cmd);
+                    break;
+            }
+        } catch(Exception e) {
+            Log.e(TAG, "[Invalid message] " + e.toString());
+            e.printStackTrace();
+            return;
+        }
     }
 
     /**
@@ -142,9 +241,80 @@ public class XWalkExtensionClient {
      * @param message the message from JavaScript code.
      */
     public String onSyncMessage(int extensionInstanceID, String message) {
-        return "";
+        //TODO: logic to parse sync message
+        String TAG = mName;
+        Object result = null;
+        Log.e(TAG, "sync Message:" + message);
+        try {
+            JSONObject m = new JSONObject(message);
+            String cmd = m.getString("cmd");
+            switch (cmd) {
+                case "invokeNative":
+                    // invoke the method
+                    // Object[] args = getArgsFromJson(m.getJSONArray("args"));
+                    //TODO: combine instancID args(callback/promise) cid/, args
+                    result = mirror.invokeMethod(this, m.getString("name"), m.getJSONArray("args"));
+                    break;
+
+                case "getProperty":
+                    result = mirror.getProperty(this, m.getString("name"));
+                    break;
+                case "setProperty":
+                    //TODO: Do type check here for the set value or type exception handler
+                    // new ReflectField(null, this, m.getString("name")).set(m.get("value"));
+                    mirror.setProperty(this, m.getString("name"), m.get("value"));
+                    break;
+                default:
+                    Log.w(TAG, "Unsupported cmd: " + cmd);
+                    break;
+            }
+        } catch(Exception e) {
+            Log.e(TAG, "[Invalid message] " + e.toString());
+            e.printStackTrace();
+        }
+        Log.e(TAG, "THE RESULT:::::" + ((result != null) ? objToSerializable(result).toString() : ""));
+        return (result != null) ? objToSerializable(result).toString() : "";
     }
 
+    public void invokeJsCallback(int cid, String key, Object... args) {
+        //{
+        //  cmd:"invokeCallback"
+        //  cid: unit32
+        //  key: String
+        //  args: args
+        //}
+        try {
+            JSONObject msgOut = new JSONObject();
+            msgOut.put("cmd", "invokeCallback");
+            msgOut.put("cid", cid);
+            msgOut.put("key", key);
+            msgOut.put("args", argsToSerializable(args));
+            postMessage(this.instanceId, msgOut.toString());
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void logJs(int instanceId, String msg) {
+        logJs(instanceId, msg, "error");
+    }
+    public void logJs(int instanceId, String msg, String level) {
+        /*
+         * { cmd:"error"
+         *   level: "log", "info", "warn", "error", default is "error"
+         *   msg: String
+         * }
+         */
+        try {
+            JSONObject msgOut = new JSONObject(); 
+            msgOut.put("cmd", "error");
+            msgOut.put("level", level);
+            msgOut.put("msg", msg);
+            postMessage(instanceId, msgOut.toString());
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * Post messages to JavaScript via extension's context.
