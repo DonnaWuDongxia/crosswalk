@@ -6,6 +6,46 @@
  * requireNative("jsStub")
  */
 
+/*
+ * Serialize JavaScript object to JSON string and will be sent to Java. 
+ * JavaScript --> JSON --> Java
+ *
+ * usage:
+ * 1. serialize arguments for "invokeNativeMethod"
+ * 2. serialize the value for "setProperty"
+ * input: JS array
+ * output: string including right slash
+ * example:
+ * args = ["Bob", 27, "Male"];
+ * json: "[\"Bob\", 27, \"Male\"]";
+ */
+function jsToJson (obj) {
+  return JSON.stringify(obj);
+}
+
+/*
+ * Construct JavaScript object from JSON string received from Java. 
+ * Java --> JSON --> JavaScript
+ *
+ * usage:
+ * 1. construct the arguments for "invokeJsCallback"
+ * input: JSON string
+ * output: JavaScript object 
+ * example:
+ * json: "["Bob", 27, "Male", ]";
+ * args = ["Bob", 27, "Male"];
+ *
+ * json: "{\"@type\":\"com.godoox.software.User\",\"name\":\"Bob\",\"age\":27,\"sex\":\"Male\"}"
+ * args = {
+ *   name:"Bob",
+ *   age:27,
+ *   sex:"Male"
+ * }
+ */
+function jsToJson (obj) {
+  return JSON.parse(obj);
+}
+
 var jsStub = function(extensionObj, isConstructor) {
   var nextCallbackId = 1;
   var instanceId = 1;

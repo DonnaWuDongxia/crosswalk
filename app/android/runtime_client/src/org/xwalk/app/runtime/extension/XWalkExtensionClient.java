@@ -35,9 +35,6 @@ public class XWalkExtensionClient {
     // Reflection for JS stub generation
     protected ReflectionHelper mirror;
 
-    //TODO: Walkaround for invokeJsCallback
-    protected int instanceId;
-
     /**
      * Constructor for extensions need to auto generate jsApi.
      * @param name the extension name.
@@ -152,53 +149,6 @@ public class XWalkExtensionClient {
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
     }
 
-    private Object objToSerializable(Object obj) {
-        //We expect the object is JSONObject or primive type.
-        //TODO: convert common object to serializable object
-        if (obj instanceof String)
-            obj = "\"" + obj + "\"";
-        return obj;
-    }
-
-    /**
-     * Serialize Java object to JSONObject
-     */
-    private String objJsonStringify(Object obj) {
-        //We expect the object is JSONObject currently.
-        //TODO: convert common object to JSON
-
-        Object sObj = objToSerializable(obj);
-        return sObj.toString();
-    }
-
- /*   Object[] getArgsFromJson(JSONArray args) {
-        //TODO: convert JSON args to Java object[]
-        Log.e("json2Obj", "***args:" + args);
-        Object[] oArgs = new Object[args.length()];
-            for (int i = 0; i < args.length(); i++) {
-                try{
-                    oArgs[i] = args.get(i);
-                    Log.e("json2Obj", "***args[i]:" + oArgs[i]);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        return oArgs;
-    }
-    */
-
-    /*
-     * For "invokeJsCallback", pass java object to JS.
-     */
-    JSONArray argsToSerializable(Object... args) {
-        JSONArray jsonArray = new JSONArray();
-        Object o;
-        for (int i = 0; i < args.length; i++) {
-            o = objToSerializable(args[i]);
-            jsonArray.put(o);
-        }
-        return jsonArray;
-    }
 
     /**
      * JavaScript calls into Java code. The message is handled by
@@ -217,7 +167,7 @@ public class XWalkExtensionClient {
                 case "invokeNative":
                     String mName = m.getString("name");
                     //Object[] args = getArgsFromJson(m.getJSONArray("args"));
-                    mirror.invokeMethod(this, mName, m.getJSONArray("args"));
+                    mirror.invokeMethod(extensionInstanceID, this, mName, m.getJSONArray("args"));
                     break;
                 case "newInstance":
                     //TODO: support constructor
@@ -251,9 +201,8 @@ public class XWalkExtensionClient {
             switch (cmd) {
                 case "invokeNative":
                     // invoke the method
-                    // Object[] args = getArgsFromJson(m.getJSONArray("args"));
                     //TODO: combine instancID args(callback/promise) cid/, args
-                    result = mirror.invokeMethod(this, m.getString("name"), m.getJSONArray("args"));
+                    result = mirror.invokeMethod(extensionInstanceID, this, m.getString("name"), m.getJSONArray("args"));
                     break;
 
                 case "getProperty":
@@ -272,24 +221,27 @@ public class XWalkExtensionClient {
             Log.e(TAG, "[Invalid message] " + e.toString());
             e.printStackTrace();
         }
-        Log.e(TAG, "THE RESULT:::::" + ((result != null) ? objToSerializable(result).toString() : ""));
-        return (result != null) ? objToSerializable(result).toString() : "";
+        Log.e(TAG, "THE RESULT:::::" + ((result != null) ? ReflectionHelper.objToJSON(result): ""));
+        return (result != null) ? ReflectionHelper.objToJSON(result): "";
     }
 
     public void invokeJsCallback(int cid, String key, Object... args) {
         //{
         //  cmd:"invokeCallback"
+        //  // need to combine the cid and instanceId in the same feild
         //  cid: unit32
         //  key: String
         //  args: args
         //}
         try {
+            int instanceID = cid >> 24;
+            int callbackID  = cid & 0xFFFFFF;
             JSONObject msgOut = new JSONObject();
             msgOut.put("cmd", "invokeCallback");
-            msgOut.put("cid", cid);
+            msgOut.put("cid", callbackID);
             msgOut.put("key", key);
-            msgOut.put("args", argsToSerializable(args));
-            postMessage(this.instanceId, msgOut.toString());
+            msgOut.put("args", ReflectionHelper.objToJSON(args));
+            postMessage(instanceID, msgOut.toString());
         } catch(Exception e) {
             e.printStackTrace();
         }

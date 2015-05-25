@@ -8,5 +8,6 @@ import java.lang.annotation.Target;
 @SuppressWarnings("javadoc")
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.PARAMETER})
-public @interface JsPromise {
+public @interface JsCallback {
+    public boolean isPromise() default false;
 }

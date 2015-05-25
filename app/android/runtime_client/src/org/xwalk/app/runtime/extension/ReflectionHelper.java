@@ -6,6 +6,7 @@ import java.lang.reflect.*;
 import java.util.HashMap;
 import java.util.Map;
 import org.json.*;
+import com.cedarsoftware.util.io.JsonWriter;
 
 class ReflectionHelper {
     private static final String TAG = "JsStubReflectHelper";
@@ -109,7 +110,47 @@ class ReflectionHelper {
         return entryPoint;
     }
 
-    Object invokeMethod(Object obj, String mName, JSONArray args) {
+    /*
+     * Use case: construct Java object array from JSON array which is passed by JS
+     * 1. restore original Java object in the array
+     * 2. if the parameter is a callbackID, then combine the instanceID with it
+     */
+    public static Object[] getArgsFromJson(int instanceID, Method m, JSONArray args) {
+        //TODO: convert JSON args to Java object[]
+        Log.e("json2Obj", "***args:" + args);
+        Class[] pTypes = m.getParameterTypes();
+        Object[] oArgs = new Object[pTypes.length];
+        Annotation[][] anns = m.getParameterAnnotations();
+        for (int i = 0; i < pTypes.length; i++) {
+            Class p = pTypes[i];
+            if(p.equals(int.class) || p.equals(Integer.class)) {
+                if(anns[i].length > 0 && anns[i][0] instanceof JsCallback) {
+                //TODO: Should we get the info in mInfo?
+                    int callback = args.getInt(i);
+                    callback = instanceID << 24 & callback;
+                    oArgs[i] = callback;
+                } else {
+                    oArgs[i] = args.getInt(i);
+                }
+            } else if (p.equals(String.class)) {
+                oArgs[i] = args.getString(i);
+            }
+        }
+        return oArgs;
+    }
+
+    /*
+     * Use case: return the Java object back to JS after invokeNativeMethod
+     * 1. quote string in proper way
+     * 2. serialize the normal Java object
+     */
+    public static String objToJSON(Object obj) {
+        //We expect the object is JSONObject or primive type.
+        String json = JsonWriter.objToJson(obj);
+        return JSONObject.quote(json);
+    }
+
+    Object invokeMethod(int instanceID, Object obj, String mName, JSONArray args) {
         if (!(myClass.isInstance(obj) && hasMethod(mName))) {
             throw new UnsupportedOperationException("Not support");
         }
@@ -118,17 +159,7 @@ class ReflectionHelper {
             if((obj == null) || m ==null) {
                 Log.e(TAG, "obj is null");
             }
-            //convert JSON args TO Object...
-            Class[] pTypes = m.getParameterTypes();
-            Object[] oArgs = new Object[pTypes.length];
-            for (int i = 0; i < pTypes.length; i++) {
-                Class p = pTypes[i];
-                if(p.equals(int.class) || p.equals(Integer.class)) {
-                    oArgs[i] = args.getInt(i);
-                } else if (p.equals(String.class)) {
-                    oArgs[i] = args.getString(i);
-                }
-            }
+            Object[] oArgs = getArgsFromJson(instanceID, m, args);
             return m.invoke(obj, oArgs);
         } catch (IllegalAccessException e) {
             // TODO Auto-generated catch block
