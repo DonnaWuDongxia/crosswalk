@@ -27,8 +27,9 @@ function jsToJson (obj) {
  * Construct JavaScript object from JSON string received from Java. 
  * Java --> JSON --> JavaScript
  *
- * usage:
- * 1. construct the arguments for "invokeJsCallback"
+ * usage:construct the arguments for "invokeJsCallback"
+ * 1. delete "@type" for ordinary object
+ * 2. constructor the right js object, if the "@type" is exposed js constructor
  * input: JSON string
  * output: JavaScript object 
  * example:
@@ -42,8 +43,14 @@ function jsToJson (obj) {
  *   sex:"Male"
  * }
  */
-function jsToJson (obj) {
-  return JSON.parse(obj);
+function jsonToJs (obj) {
+  obj = JSON.parse(obj);
+  if(obj instanceof Object) {
+    if(obj.hasOwnProperty("@type")) {
+      delete obj["@type"];
+    }
+  }
+  return obj;
 }
 
 var jsStub = function(extensionObj, isConstructor) {
@@ -76,11 +83,9 @@ var jsStub = function(extensionObj, isConstructor) {
 
 jsStub.create = function(base, extensionObj, isConstructor) {
   var helper = jsStub.getHelper(base, extensionObj, isConstructor);
-  /*
-  base.setMessageListener(function (msg) {
+  extensionObj.setMessageListener(function (msg) {
     helper.handleMessage(msg);
   });
-  */
   return helper;
 };
 
@@ -102,7 +107,7 @@ function isSerializable(obj) {
       obj instanceof RegExp ||
       obj instanceof String)
     return true;
-  for (var p in Object.getOwnPropertyNames(obj))
+  for (var p of Object.getOwnPropertyNames(obj))
     if (!isSerializable(obj[p]))
       return false;
   return true;
@@ -122,6 +127,7 @@ jsStub.prototype = {
 
     // Retain callbacks in JS stub, replace them to related number ID
     var call = [];
+    var cid = this.getCallbackId();
     args.forEach(function(val, vid, a) {
       if (!isSerializable(val)) {
         call[vid] = val;
@@ -129,9 +135,7 @@ jsStub.prototype = {
       }
     })
 
-    var cid = 0;
     if (call.length > 0) {
-      cid = this.getCallbackId();
       this.callbacks[cid] = call;
     }
     
@@ -164,7 +168,7 @@ jsStub.prototype = {
       args: args
     });
   },
-  "invokeCallback": function(cid, key, args) {
+  "invokeCallback": function(id, key, args) {
       var cid = id >>> 8;
       var vid = id & 0xFF;
       var obj = this.callbacks[cid][vid];
@@ -174,7 +178,7 @@ jsStub.prototype = {
           key.split('.').forEach(function(p){ obj = obj[p]; });
 
       if (obj instanceof Function)
-          obj.apply(null, args);
+          obj.apply(null, jsonToJs(args));
   },
   "handleMessage": function(json) {
     var msg = JSON.parse(json);

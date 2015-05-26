@@ -161,7 +161,8 @@ public class XWalkExtensionClient {
         String TAG = mName;
         try {
             JSONObject m = new JSONObject(message);
-            Log.e(TAG, "async Message:" + message);
+            Log.e(TAG, "onMessage:" + message);
+            Log.e(TAG, "instanceID:" + extensionInstanceID);
             String cmd = m.getString("cmd");
             switch (cmd) {
                 case "invokeNative":
@@ -195,6 +196,7 @@ public class XWalkExtensionClient {
         String TAG = mName;
         Object result = null;
         Log.e(TAG, "sync Message:" + message);
+        Log.e(TAG, "instanceID:" + extensionInstanceID);
         try {
             JSONObject m = new JSONObject(message);
             String cmd = m.getString("cmd");
@@ -241,6 +243,8 @@ public class XWalkExtensionClient {
             msgOut.put("cid", callbackID);
             msgOut.put("key", key);
             msgOut.put("args", ReflectionHelper.objToJSON(args));
+            Log.e("invokeJsCallback", "***cid:" + cid + ", instanceID:" + instanceID);
+            Log.e("invokeJsCallback", "***msgOut:" + msgOut.toString());
             postMessage(instanceID, msgOut.toString());
         } catch(Exception e) {
             e.printStackTrace();

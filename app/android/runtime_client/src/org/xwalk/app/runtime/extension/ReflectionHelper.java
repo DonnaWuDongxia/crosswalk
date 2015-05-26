@@ -6,6 +6,7 @@ import java.lang.reflect.*;
 import java.util.HashMap;
 import java.util.Map;
 import org.json.*;
+import java.lang.annotation.Annotation;
 import com.cedarsoftware.util.io.JsonWriter;
 
 class ReflectionHelper {
@@ -117,23 +118,31 @@ class ReflectionHelper {
      */
     public static Object[] getArgsFromJson(int instanceID, Method m, JSONArray args) {
         //TODO: convert JSON args to Java object[]
-        Log.e("json2Obj", "***args:" + args);
+        Log.e("getArgsFromJson", "***args:" + args);
+        Log.e("getArgsFromJson", "***instanceID:" + instanceID);
         Class[] pTypes = m.getParameterTypes();
         Object[] oArgs = new Object[pTypes.length];
         Annotation[][] anns = m.getParameterAnnotations();
         for (int i = 0; i < pTypes.length; i++) {
-            Class p = pTypes[i];
-            if(p.equals(int.class) || p.equals(Integer.class)) {
-                if(anns[i].length > 0 && anns[i][0] instanceof JsCallback) {
-                //TODO: Should we get the info in mInfo?
-                    int callback = args.getInt(i);
-                    callback = instanceID << 24 & callback;
-                    oArgs[i] = callback;
-                } else {
-                    oArgs[i] = args.getInt(i);
+            try{
+                Class p = pTypes[i];
+                if(p.equals(int.class) || p.equals(Integer.class)) {
+                    if(anns[i].length > 0 && anns[i][0] instanceof JsCallback) {
+                        //TODO: Should we get the info in mInfo?
+                        int callback = args.getInt(i);
+                        callback = instanceID << 24 | callback;
+                        oArgs[i] = callback;
+                    } else {
+                        oArgs[i] = args.getInt(i);
+                    }
+                    Log.e("getArgsFromJson", "***oArgs[i]:" + oArgs[i]);
+                } else if (p.equals(String.class)) {
+                    oArgs[i] = args.getString(i);
                 }
-            } else if (p.equals(String.class)) {
-                oArgs[i] = args.getString(i);
+                //TODO: parse other types
+            } catch (Exception e) {
+                Log.e("getArgsFromJson", "exception");
+                e.printStackTrace();
             }
         }
         return oArgs;
@@ -146,8 +155,12 @@ class ReflectionHelper {
      */
     public static String objToJSON(Object obj) {
         //We expect the object is JSONObject or primive type.
-        String json = JsonWriter.objToJson(obj);
-        return JSONObject.quote(json);
+        if (obj instanceof String) {
+            return JSONObject.quote(obj.toString());
+        } else {
+            String json = JsonWriter.objectToJson(obj);
+            return json;
+        }
     }
 
     Object invokeMethod(int instanceID, Object obj, String mName, JSONArray args) {
