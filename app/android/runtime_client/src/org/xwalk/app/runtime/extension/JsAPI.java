@@ -19,4 +19,5 @@ public @interface JsAPI {
 	public boolean isEntryPoint() default false;
 	public boolean isWritable() default false;
 	public boolean isConstructor() default false;
+	public boolean isEventList() default false;
 }                                                                   

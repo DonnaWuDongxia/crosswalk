@@ -14,6 +14,7 @@ class ReflectionHelper {
     private Class myClass;
     public MemberInfo entryPoint = null;
     private Map<String, MemberInfo> members = new HashMap<String, MemberInfo>();
+    public AccessibleObject eventList = null;
 
     /*  
      * 4 types: method, setter, getter, constructor
@@ -46,13 +47,25 @@ class ReflectionHelper {
         for (AccessibleObject a : accessers) {
 
             if (a.isAnnotationPresent(JsAPI.class)){
-                MemberInfo mInfo = new MemberInfo(myClass);
-                mInfo.accesser = a;
                 JsAPI mAnno = a.getAnnotation(JsAPI.class);
+                String name = ((Member) a).getName();
+
+                //Get eventList from propeties
+                if (type == MemberType.JS_PROPERTY && mAnno.isEventList()) {
+                    if (!a.getType().equals(String[].class)) {
+                        Log.w(TAG, "Invalid type for Supported JS event list" + name);
+                        continue
+                    }
+                    supportedEvents = a;
+                    continue;
+                }
+
+                MemberInfo mInfo = new MemberInfo(myClass);
+                mInfo.type = type;
                 mInfo.isEntryPoint = mAnno.isEntryPoint();
                 mInfo.isWritable = mAnno.isWritable();
-                String name = ((Member) a).getName();
-                mInfo.type = type;
+                mInfo.accesser = a;
+
 
                 if (type == MemberType.JS_METHOD && mAnno.isConstructor())
                     mInfo.type = MemberType.JS_CONSTRUCTOR;
@@ -234,5 +247,26 @@ class ReflectionHelper {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    String[] getEventList(Object obj, String event) {
+        try {
+            return (String[])eventList.get(obj);
+        } catch (IllegalArgumentException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        return [];
+    }
+
+    boolean isEventSupported(Object obj, String event) {
+        String[] events = getEventList(obj, event);
+        for(var i = 0; i < events.lenght; i++) {
+            if(events[i] == event) return true;
+        }
+        return false;
     }
 }

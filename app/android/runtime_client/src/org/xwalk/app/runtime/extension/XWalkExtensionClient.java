@@ -158,7 +158,7 @@ public class XWalkExtensionClient {
      * @param message the message from JavaScript code.
      */
     public void onMessage(int extensionInstanceID, String message) {
-        String TAG = mName;
+        String TAG = "Extension-" + mName;
         try {
             JSONObject m = new JSONObject(message);
             Log.e(TAG, "onMessage:" + message);
@@ -193,7 +193,7 @@ public class XWalkExtensionClient {
      */
     public String onSyncMessage(int extensionInstanceID, String message) {
         //TODO: logic to parse sync message
-        String TAG = mName;
+        String TAG = "Extension-" + mName;
         Object result = null;
         Log.e(TAG, "sync Message:" + message);
         Log.e(TAG, "instanceID:" + extensionInstanceID);
@@ -267,6 +267,28 @@ public class XWalkExtensionClient {
             msgOut.put("level", level);
             msgOut.put("msg", msg);
             postMessage(instanceId, msgOut.toString());
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void dispatchEvent(JSONObject event) {
+        /*
+         * { cmd:"dispatchEvent"
+         *   type: pointed in "supportedEvents" string array
+         *   data: a JSON data will passed to js
+         * }
+         */
+        try {
+            String type = event.getString("type");
+            if (!ReflectionHelper.isEventSupported(this, type)) {
+                Log.w(mName, "Extension not supported event: " + type);
+                return;
+            }
+            JSONObject msgOut = new JSONObject(); 
+            msgOut.put("cmd", "dispatchEvent");
+            msgOut.put("event", event);
+            broadcastMessage(msgOut.toString());
         } catch(Exception e) {
             e.printStackTrace();
         }

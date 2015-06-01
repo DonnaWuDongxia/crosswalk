@@ -53,12 +53,15 @@ function jsonToJs (obj) {
   return obj;
 }
 
-var jsStub = function(extensionObj, isConstructor) {
+var jsStub = function(base, channel, isConstructor) {
   var nextCallbackId = 1;
   var instanceId = 1;
 
-  //refer to the extension
-  this.extension = extensionObj;
+  //refer to the exposed extension object
+  this.base = base;
+
+  //refer to the global extension variable, used to send message
+  this.channel = channel;
   this.isConstructor = !!(isConstructor);
   //retain the properties which is exposed by native
   this.properties = {};
@@ -81,17 +84,17 @@ var jsStub = function(extensionObj, isConstructor) {
   }
 };
 
-jsStub.create = function(base, extensionObj, isConstructor) {
-  var helper = jsStub.getHelper(base, extensionObj, isConstructor);
-  extensionObj.setMessageListener(function (msg) {
+jsStub.create = function(base, channel, isConstructor) {
+  var helper = jsStub.getHelper(base, channel, isConstructor);
+  channel.setMessageListener(function (msg) {
     helper.handleMessage(msg);
   });
   return helper;
 };
 
-jsStub.getHelper = function(base, extensionObj, isConstructor) {
+jsStub.getHelper = function(base, channel, isConstructor) {
   if (!(base.__stubHelper instanceof jsStub)) {
-    base.__stubHelper = new jsStub(extensionObj, isConstructor);
+    base.__stubHelper = new jsStub(base, channel, isConstructor);
   }
   return base.__stubHelper;
 };
@@ -199,7 +202,10 @@ jsStub.prototype = {
         // supported key: log, info, warn, error
         console[msg.level](msg.msg);
         break;
-      case "destory":
+      case "dispatchEvent":
+        if(msg.event.type) {
+          this.base.dispatchEvent(msg.event);
+        }
         break;
       default:
         console.warn("Unsupported Java CMD:" + msg.cmd);
@@ -207,7 +213,7 @@ jsStub.prototype = {
   },
   sendSyncMessage: function(msg) {
     debugger;
-    var resultStr = this.extension.internal.sendSyncMessage(JSON.stringify(msg));
+    var resultStr = this.channel.internal.sendSyncMessage(JSON.stringify(msg));
 
     //TODO: return null or undefined.
     console.log("invoke sync:" + JSON.stringify(resultStr));
@@ -217,7 +223,7 @@ jsStub.prototype = {
   postMessage: function(msg) {
     debugger;
     console.log("invoke PostMessage:" + JSON.stringify(msg));
-    this.extension.postMessage(JSON.stringify(msg));
+    this.channel.postMessage(JSON.stringify(msg));
   },
 
   "destory": function() {}
@@ -243,6 +249,92 @@ jsStub.defineProperty = function(obj, prop, writable) {
     }
   }
   Object.defineProperty(obj, prop, desc);
+};
+
+// EventTarget implementation:
+// All extension instances will receive event data
+jsStub.makeEventTarget = function(base) {
+  var helper = jsStub.getHelper(base);
+  helper._event_listeners = {};
+
+  helper.addEvent = function(type, event) {
+    Object.defineProperty(helper, "_on" + type, {
+      writable : true,
+    });
+
+    Object.defineProperty(this, "on" + type, {
+      get: function() {
+        return helper["_on" + type];
+      },
+      set: function(listener) {
+        var old_listener = helper["_on" + type];
+        if (old_listener === listener)
+          return;
+
+        if (old_listener)
+          base.removeEventListener(type, old_listener);
+
+        helper["_on" + type] = listener;
+        base.addEventListener(type, listener);
+      },
+      enumerable: true,
+    });
+
+  };
+
+  function dispatchEvent(event) {
+    if (!event.type)
+      return;
+    if (!(event.type in helper.event_listeners))
+      return;
+
+    var listeners = helper.event_listeners[event.type];
+    for (var i in listeners)
+      listeners[i](event);
+  };
+
+  function addEventListener(type, listener) {
+    if (!(listener instanceof Function))
+      return;
+
+    if (!(("on" + type) in base))
+      return;
+
+    if (type in helper.event_listeners) {
+      var listeners = helper.event_listeners[type];
+      if (listeners.indexOf(listener) == -1)
+        listeners.push(listener);
+    } else {
+      helper.event_listeners[type] = [listener];
+    }
+  };
+
+  function removeEventListener(type, listener) {
+    if (!(listener instanceof Function))
+      return;
+
+    if (!(type in helper.event_listeners))
+      return;
+
+    var listeners = helper.event_listeners[type];
+    if(listeners.indexOf(listener) > -1)
+      listeners.splice(index, 1);
+  };
+
+  Object.defineProperties(base, {
+    "addEventListener" : {
+      value : addEventListener,
+      enumerable : true,
+    },
+    "removeEventListener" : {
+      value : removeEventListener,
+      enumerable : true,
+    },
+    "dispatchEvent" : {
+      value : dispatchEvent,
+      enumerable : true,
+    },
+  });
 };
 
 exports.jsStub = jsStub;
