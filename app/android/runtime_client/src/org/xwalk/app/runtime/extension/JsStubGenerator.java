@@ -20,9 +20,6 @@ public class JsStubGenerator {
 	String generate() {
 		String result = "";
 		Map<String, MemberInfo> members = reflection.getMembers();
-		if (reflection.entryPoint != null) {
-			result += generateEntryPoint();
-		}
 		for (String key : members.keySet()) {
 			MemberInfo m = members.get(key);
 			switch (m.type) {
@@ -30,9 +27,6 @@ public class JsStubGenerator {
 				result += generateMethod();
 			case JS_PROPERTY:
 				result += generateProperty();
-			case JS_CONSTRUCTOR:
-				result += generateConstructor();
-				
 			}
 		}
 		
@@ -44,14 +38,6 @@ public class JsStubGenerator {
 	}
 	
 	String generateProperty() {
-        return "";
-	}
-	
-	String generateConstructor() {
-        return "";
-	}
-
-	String generateEntryPoint() {
         return "";
 	}
 }

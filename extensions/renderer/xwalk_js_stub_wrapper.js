@@ -128,7 +128,6 @@ jsStub.prototype = {
       value: value
     });
   },
-  },
   "invokeCallback": function(id, key, args) {
       var cid = id >>> 8;
       var vid = id & 0xFF;

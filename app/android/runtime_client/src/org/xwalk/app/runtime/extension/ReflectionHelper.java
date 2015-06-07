@@ -151,20 +151,24 @@ class ReflectionHelper {
         return clz.isPrimitive() || primitives.contains(clz);
     }
 
-    /*
-     * Use case: return the Java object back to JS after invokeNativeMethod
-     * 1. quote string in proper way
-     * 2. serialize the normal Java object
-     */
-    public static String objToJSON(Object obj) {
-        //We expect the object is JSONObject or primive type.
-        if (obj instanceof String) {
-            return JSONObject.quote(obj.toString());
-        } else if(isPrimitive(obj) || obj instanceof JSONObject) {
-            return obj.toString();
+    public static Object toSerializableObject(Object obj) {
+        if(isPrimitive(obj) ||
+           obj instanceof String ||
+           obj instanceof Map ||
+           obj instanceof Collection ||
+           obj instanceof JSONArray ||
+           obj instanceof JSONObject) {
+            return obj;
+        } else if (obj.getClass.isArray()) {
+            JSONArray result = new JSONArray();
+            Object [] arr = (Object[]) obj;
+            for(int i = 0; i < arr.length; i++) {
+                result.put(i, toSerializableObject(arr[i]));
+            }
+            return result;
         } else {
             /*
-             * For objects, we will just serialize the accessible fields.
+             * For ordinary objects, we will just serialize the accessible fields.
              */
             try{
                 Class c = obj.getClass();
@@ -173,65 +177,71 @@ class ReflectionHelper {
                 for(Field f : fields) {
                     json.put(f.getName(), f.get(obj));
                 }
-                return json.toString();
+                return json;
             } catch(Exception e) {
                 Log.e(TAG, "Field to serialize object to JSON.");
                 e.printStackTrace();
+                return null;
             }
         }
-        return "";
     }
 
-    Object invokeMethod(int instanceID, Object obj, String mName, JSONArray args) {
+    /*
+     * Use case: return the Java object back to JS after invokeNativeMethod
+     * 1. quote string in proper way
+     * 2. serialize the normal Java object
+     * 3. serialize [Object... args]
+     */
+    //TODO: exceptions, null, undefined, nfn etc.
+    public static String objToJSON(Object obj) {
+        //We expect the object is JSONObject or primive type.
+        Object sObj = toSerializableObject(obj);
+        if (sObj instanceof String) {
+            return JSONObject.quote(sObj.toString());
+        } else {
+            return sObj.toString();
+        }
+    }
+
+    Object invokeMethod(int instanceID, Object obj, String mName,
+                        JSONArray args) throws ReflectiveOperationException {
         if (!(myClass.isInstance(obj) && hasMethod(mName))) {
             throw new UnsupportedOperationException("Not support:" + mName);
         }
-        try {
-            Method m = (Method)members.get(mName).accesser;
-            if((obj == null) || m ==null) {
-                Log.e(TAG, "obj is null");
-            }
-            Object[] oArgs = getArgsFromJson(instanceID, m, args);
-            return m.invoke(obj, oArgs);
-        } catch (Exception e) {
-            throw e;
+        Method m = (Method)members.get(mName).accesser;
+        if((obj == null) || m ==null) {
+            Log.e(TAG, "obj is null");
         }
-        return null;
+        Object[] oArgs = getArgsFromJson(instanceID, m, args);
+        return m.invoke(obj, oArgs);
     }
 
-    Object getProperty(Object obj, String pName) {
+    Object getProperty(Object obj, String pName)
+                       throws ReflectiveOperationException {
         if (!(myClass.isInstance(obj) && hasProperty(pName))) {
             throw new UnsupportedOperationException("Not support:" + pName);
         }
-        try {
-            Field f = (Field)members.get(pName).accesser;
-            if(!f.isAccessible())
-                f.setAccessible(true);
-            if((obj == null) || f ==null) {
-                Log.e(TAG, "obj is null");
-            }
-            return f.get(obj);
-        } catch (Exception e) {
-            throw e;
+        Field f = (Field)members.get(pName).accesser;
+        if(!f.isAccessible())
+            f.setAccessible(true);
+        if((obj == null) || f ==null) {
+            Log.e(TAG, "obj is null");
         }
-        return null;
+        return f.get(obj);
     }
 
-    void setProperty(Object obj, String pName, Object value) {
+    void setProperty(Object obj, String pName, Object value)
+                     throws ReflectiveOperationException {
         if (!(myClass.isInstance(obj) && hasProperty(pName))) {
             throw new UnsupportedOperationException("Not support:" + pName);
         }
-        try {
-            Field f = (Field)members.get(pName).accesser;
-            if(!f.isAccessible())
-                f.setAccessible(true);
-            if((obj == null) || f ==null) {
-                Log.e(TAG, "obj is null");
-            }
-            f.set(obj, value);
-        } catch (Exception e) {
-            throw e;
+        Field f = (Field)members.get(pName).accesser;
+        if(!f.isAccessible())
+            f.setAccessible(true);
+        if((obj == null) || f ==null) {
+            Log.e(TAG, "obj is null");
         }
+        f.set(obj, value);
     }
 
     String[] getEventList(Object obj, String event) {
@@ -250,10 +260,11 @@ class ReflectionHelper {
     boolean isEventSupported(Object obj, String event) {
         String[] events = getEventList(obj, event);
         Log.e(TAG, "eventList.length:" + events.length);
+        Log.e(TAG, "checked event type:" + event);
         if(events == null) return false;
         for(int i = 0; i < events.length; i++) {
             Log.e("eventList[i]", events[i]);
-            if(events[i] == event) return true;
+            if(events[i].equals(event)) return true;
         }
         return false;
     }

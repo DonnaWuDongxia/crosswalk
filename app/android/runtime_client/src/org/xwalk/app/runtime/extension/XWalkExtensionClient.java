@@ -160,12 +160,12 @@ public class XWalkExtensionClient {
         try {
             JSONObject m = new JSONObject(message);
             String cmd = m.getString("cmd");
+            String memberName = m.getString("name");
             try{
                 switch (cmd) {
                     case "invokeNative":
-                        String mName = m.getString("name");
                         mirror.invokeMethod(extensionInstanceID,
-                               this, mName, m.getJSONArray("args"));
+                               this, memberName, m.getJSONArray("args"));
                         break;
                     default:
                         Log.w(TAG, "Unsupported cmd: " + cmd);
@@ -175,7 +175,7 @@ public class XWalkExtensionClient {
                 //Currently, we only notice the user when the argument is not matching.
                 //The error message will passed to JavaScript console.
                 if (e instanceof IllegalArgumentException) {
-                    logJs(instanceID, "IllegalArgument:" + eData, "warn");
+                    logJs(extensionInstanceID, e.toString(), "warn");
                 } else {
                     Log.w(TAG, "[Failed to access member] " + e.toString());
                 }
@@ -201,8 +201,7 @@ public class XWalkExtensionClient {
         try {
             JSONObject m = new JSONObject(message);
             String cmd = m.getString("cmd");
-            memberName = m.getString("name");
-            eData = cmd + "_" + memberName;
+            String memberName = m.getString("name");
             try{
                 switch (cmd) {
                     case "invokeNative":
@@ -211,7 +210,6 @@ public class XWalkExtensionClient {
                         break;
 
                     case "getProperty":
-                        eData = "getProperty_" + memberName;
                         result = mirror.getProperty(this, memberName);
                         break;
 
@@ -225,7 +223,7 @@ public class XWalkExtensionClient {
                 }
             } catch(Exception e) {
                 if (e instanceof IllegalArgumentException) {
-                    logJs(instanceID, "IllegalArgument:" + eData, "warn");
+                    logJs(extensionInstanceID, e.toString(), "warn");
                 } else {
                     Log.w(TAG, "[Failed to access member] " + e.toString());
                 }
@@ -254,6 +252,7 @@ public class XWalkExtensionClient {
             msgOut.put("cid", callbackID);
             msgOut.put("key", key);
             msgOut.put("args", ReflectionHelper.objToJSON(args));
+            Log.w(mName, "invokeJsCallback msg:" + msgOut.toString());
             postMessage(instanceID, msgOut.toString());
         } catch(Exception e) {
             e.printStackTrace();
