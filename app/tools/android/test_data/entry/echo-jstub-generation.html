@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Test entry file for "echoJsStubGenExtension"</title>
+    <script type="text/javascript">
+      function action() {
+        var pp1 = document.getElementById('pp1');
+        var pp2 = document.getElementById('pp2');
+        var pp3 = document.getElementById('pp3');
+        var pp4 = document.getElementById('pp4');
+        pp1.innerText = jsStub.echo.prefix;
+        jsStub.echo.getPrefix(function(p){pp2.innerText = p});
+
+        jsStub.echo.getPrefixPromise().then(function(p){
+            pp3.innerText = p;
+            }).catch(function() {console.log("rejected.")});
+        
+        pp4.innerText = jsStub.echo.echo("Hello World!");
+
+        //Test events
+        onHandler = function(e) {
+          var eData = document.createTextNode("Event data:" + e);
+          document.body.appendChild(eData);
+          document.body.appendChild(document.createElement("br"));
+        };
+
+        addHandler = function(e) {
+          var eData = document.createTextNode("addEventListener, Event data:" + e);
+          document.body.appendChild(eData);
+          document.body.appendChild(document.createElement("br"));
+        };
+
+        jsStub.echo.onclick = onHandler; 
+        jsStub.echo.onupdatePrefix = onHandler;
+        jsStub.echo.addEventListener("click", addHandler);
+        jsStub.echo.addEventListener("updatePrefix", addHandler);
+        jsStub.echo.testEvent();
+
+        // Race condition here, because trigger event is not sync.
+        /*
+        jsStub.echo.removeEventListener("click", onHandler);
+        jsStub.echo.removeEventListener("updatePrefix", addHandler);
+        jsStub.echo.testEvent();
+        */
+
+        //Test the feature: property updated by Java will notify JS.
+        var newPrefix = document.createTextNode("The new prefix:" + jsStub.echo.prefix);
+        document.body.appendChild(document.createElement("br"));
+        document.body.appendChild(newPrefix);
+        document.body.appendChild(document.createElement("br"));
+      }
+    </script>
+  </head>
+  <body>
+    <div><h3>Echo extension test</h3>
+      Prefix property read: <label id="pp1">null</label><br />
+      Prefix sync func: <label id="pp2">null</label><br />
+      Prefix promise: <label id="pp3">null</label><br />
+      Echo sync func: <label id="pp4">null</label><br />
+    </div>
+    <button type="button" onclick="action()">Action</button>
+    <div>Test Events:</div>
+  </body>
+</html>

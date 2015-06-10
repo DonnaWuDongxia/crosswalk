@@ -5,6 +5,11 @@
 package org.xwalk.app.runtime.extension;
 
 import android.content.Intent;
+import android.util.Log;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * This class is to encapsulate the reflection detail of
@@ -26,6 +31,9 @@ public class XWalkExtensionClient {
 
     // The context used by extensions.
     protected XWalkExtensionContextClient mExtensionContext;
+
+    // Reflection for JS stub generation
+    protected ReflectionHelper reflection;
 
     /**
      * Constructor with the information of an extension.
@@ -54,6 +62,15 @@ public class XWalkExtensionClient {
         mJsApi = jsApi;
         mEntryPoints = entryPoints;
         mExtensionContext = context;
+        reflection = new ReflectionHelper(this.getClass());
+
+        if (mJsApi == null || mJsApi.length() == 0) {
+            mJsApi = new JsStubGenerator(reflection).generate();
+            if(mJsApi == null || mJsApi.length() == 0) {
+                Log.e(mName, "Can't generate JavaScript stub for this extension.");
+            }
+        }
+
         mExtensionContext.registerExtension(this);
     }
 
@@ -132,6 +149,36 @@ public class XWalkExtensionClient {
      * @param message the message from JavaScript code.
      */
     public void onMessage(int extensionInstanceID, String message) {
+        String TAG = "Extension-" + mName;
+        try {
+            JSONObject m = new JSONObject(message);
+            String cmd = m.getString("cmd");
+            String memberName = m.getString("name");
+            try{
+                switch (cmd) {
+                    case "invokeNative":
+                        reflection.invokeMethod(extensionInstanceID,
+                               this, memberName, m.getJSONArray("args"));
+                        break;
+                    default:
+                        Log.w(TAG, "Unsupported cmd: " + cmd);
+                        break;
+                }
+            } catch(Exception e) {
+                //Currently, we only notice the user when the argument is not matching.
+                //The error message will passed to JavaScript console.
+                if (e instanceof IllegalArgumentException) {
+                    logJs(extensionInstanceID, e.toString(), "warn");
+                } else {
+                    Log.w(TAG, "[Failed to access member] " + e.toString());
+                }
+                e.printStackTrace();
+            }
+        } catch(Exception e) {
+            Log.w(TAG, "[Invalid message] " + e.toString());
+            e.printStackTrace();
+            return;
+        }
     }
 
     /**
@@ -142,9 +189,130 @@ public class XWalkExtensionClient {
      * @param message the message from JavaScript code.
      */
     public String onSyncMessage(int extensionInstanceID, String message) {
-        return "";
+        String TAG = "Extension-" + mName;
+        Object result = null;
+        try {
+            JSONObject m = new JSONObject(message);
+            String cmd = m.getString("cmd");
+            String memberName = m.getString("name");
+            try{
+                switch (cmd) {
+                    case "invokeNative":
+                        result = reflection.invokeMethod(extensionInstanceID,
+                                 this, memberName, m.getJSONArray("args"));
+                        break;
+
+                    case "getProperty":
+                        result = reflection.getProperty(this, memberName);
+                        break;
+
+                    case "setProperty":
+                        reflection.setProperty(this, memberName, m.get("value"));
+                        break;
+
+                    default:
+                        Log.w(TAG, "Unsupported cmd: " + cmd);
+                        break;
+                }
+            } catch(Exception e) {
+                if (e instanceof IllegalArgumentException) {
+                    logJs(extensionInstanceID, e.toString(), "warn");
+                } else {
+                    Log.w(TAG, "[Failed to access member] " + e.toString());
+                }
+                e.printStackTrace();
+            }
+        } catch(Exception e) {
+            Log.w(TAG, "[Invalid message] " + e.toString());
+            e.printStackTrace();
+        }
+        return (result != null) ? ReflectionHelper.objToJSON(result): "";
     }
 
+    public void invokeJsCallback(int cid, String key, Object... args) {
+        /* {
+         *  cmd:"invokeCallback"
+         *  // need to combine the cid and instanceId in the same feild
+         *  cid: unit32
+         *  key: String
+         *  args: args
+         * }
+         */
+        try {
+            int instanceID = cid >> 24;
+            int callbackID  = cid & 0xFFFFFF;
+            JSONObject msgOut = new JSONObject();
+            msgOut.put("cmd", "invokeCallback");
+            msgOut.put("cid", callbackID);
+            msgOut.put("key", key);
+            msgOut.put("args", ReflectionHelper.objToJSON(args));
+            postMessage(instanceID, msgOut.toString());
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void logJs(int instanceId, String msg, String level) {
+        /*
+         * { cmd:"error"
+         *   level: "log", "info", "warn", "error", default is "error"
+         *   msg: String
+         * }
+         */
+        try {
+            JSONObject msgOut = new JSONObject(); 
+            msgOut.put("cmd", "error");
+            msgOut.put("level", level);
+            msgOut.put("msg", msg);
+            postMessage(instanceId, msgOut.toString());
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void dispatchEvent(String type, Object event) {
+        /*
+         * { cmd:"dispatchEvent"
+         *   type: pointed in "supportedEvents" string array
+         *   data: a JSON data will passed to js
+         * }
+         */
+        if (!reflection.isEventSupported(type)) {
+            Log.w(mName, "Unsupport event in extension: " + type);
+            return;
+        }
+        try {
+            JSONObject msgOut = new JSONObject(); 
+            msgOut.put("cmd", "dispatchEvent");
+            msgOut.put("type", type);
+            msgOut.put("event", ReflectionHelper.objToJSON(event));
+            //The event will be broadcasted to all extension instances
+            broadcastMessage(msgOut.toString());
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void updateProperty(String pName) {
+        /*
+         * { cmd:"updateProperty"
+         *   name: the name of property need to be updated
+         * }
+         */
+        if (!reflection.hasProperty(pName)) {
+            Log.w(mName, "Unexposed property in extension: " + pName);
+            return;
+        }
+        try {
+            JSONObject msgOut = new JSONObject();
+            msgOut.put("cmd", "updateProperty");
+            msgOut.put("name", pName);
+            //This message will be broadcasted to all extension instances
+            broadcastMessage(msgOut.toString());
+        } catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * Post messages to JavaScript via extension's context.
