@@ -7,6 +7,9 @@ package org.xwalk.app.runtime.extension;
 import android.content.Intent;
 import android.util.Log;
 
+import java.util.Map;
+import java.util.HashMap;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -32,8 +35,13 @@ public class XWalkExtensionClient {
     // The context used by extensions.
     protected XWalkExtensionContextClient mExtensionContext;
 
+    // Store of all binding objects
+    private Map<int, XWalkExtensionBindingObject> bindingObjectStore;
     // Reflection for JS stub generation
     protected ReflectionHelper reflection;
+
+    // Binding Object client
+    protected XWalkExtensionBindingObject bindingObjectClient;
 
     /**
      * Constructor with the information of an extension.
@@ -63,6 +71,8 @@ public class XWalkExtensionClient {
         mEntryPoints = entryPoints;
         mExtensionContext = context;
         reflection = new ReflectionHelper(this.getClass());
+        bindingObjectClient = new XWalkExtensionBindingObject(0, this);
+        bindingObjectStore = new HashMap<int, XWalkExtensionBindingObject>();
 
         if (mJsApi == null || mJsApi.length() == 0) {
             mJsApi = new JsStubGenerator(reflection).generate();
@@ -142,6 +152,18 @@ public class XWalkExtensionClient {
     }
 
     /**
+     * Tell extension that a binding object is added to store.
+     */
+    public void onAddBindingObject(Object obj) {
+    }
+
+    /**
+     * Tell extension that a binding object is destoried and removed from store.
+     */
+    public void onDestoryBindingObject(Object obj) {
+    }
+
+    /**
      * JavaScript calls into Java code. The message is handled by
      * the extension implementation. The inherited classes should
      * override and add its implementation.
@@ -153,12 +175,19 @@ public class XWalkExtensionClient {
         try {
             JSONObject m = new JSONObject(message);
             String cmd = m.getString("cmd");
-            String memberName = m.getString("name");
             try {
                 switch (cmd) {
                     case "invokeNative":
+                        String memberName = m.getString("name");
+                        int objectId = m.getInt("objectId");
+                        Object targetObj = (objectId < 0) ? this : findBindingObject(objectId);
+                        //For static properties.
+                        if (objectId == 0) targetObj = null;
+
                         reflection.invokeMethod(extensionInstanceID,
-                               this, memberName, m.getJSONArray("args"));
+                               targetObj, memberName, m.getJSONArray("args"));
+                        break;
+                    case "JsObjectCollected":
                         break;
                     default:
                         Log.w(TAG, "Unsupported cmd: " + cmd);
@@ -194,22 +223,40 @@ public class XWalkExtensionClient {
         try {
             JSONObject m = new JSONObject(message);
             String cmd = m.getString("cmd");
+            int objectId = m.getInt("objectId");
+            String cName = m.getString("__constructor");
+            /*
+             * 1. message to the extension itself,  objectId:0,    cName:""
+             * 2. message to constructor,           objectId:0,    cName:[Its exported JS name]
+             * 3, message to object,                objectId:[>1], cName:[Its constructor's JS name]
+             */
+            Object targetObj = (objectId == 0) ? ((cName.length == 0) ? this : null) : findBindingObject(objectId);
+            ReflectionHelper targetReflect = reflection.getConstructorReflection(cName);
+            if (targetReflect == null) targetReflect = reflection;
+
             String memberName = m.getString("name");
             try {
                 switch (cmd) {
                     case "invokeNative":
-                        result = reflection.invokeMethod(extensionInstanceID,
-                                this, memberName, m.getJSONArray("args"));
+                        result = targetReflect.invokeMethod(extensionInstanceID,
+                                targetObj, memberName, m.getJSONArray("args"));
                         break;
-
+                    case "newInstance":
+                        Object instance = result = targetReflect.invokeMethod(extensionInstanceID,
+                                targetObj, memberName, m.getJSONArray("args"));
+                        if (instance != null) {
+                            bindingObjectId = m.getInt("bindingObjectId");
+                            result = addBindingObject(bindingObject, instance)；
+                        } else {
+                            result = false;
+                        }
+                        break;
                     case "getProperty":
-                        result = reflection.getProperty(this, memberName);
+                        result = reflection.getProperty(targetObject, memberName);
                         break;
-
                     case "setProperty":
-                        reflection.setProperty(this, memberName, m.get("value"));
+                        reflection.setProperty(targetObject, memberName, m.get("value"));
                         break;
-
                     default:
                         Log.w(TAG, "Unsupported cmd: " + cmd);
                         break;
@@ -220,6 +267,7 @@ public class XWalkExtensionClient {
                 } else {
                     Log.w(TAG, "Failed to access member, error msg:\n" + e.toString());
                 }
+
                 e.printStackTrace();
             }
         } catch (Exception e) {
@@ -229,102 +277,34 @@ public class XWalkExtensionClient {
         return (result != null) ? ReflectionHelper.objToJSON(result): "";
     }
 
-    /* Helper method to invoke JavaScript callback.
-     *
-     * Following message will be sent to JavaScript side:
-     * {
-     *  cmd:"invokeCallback"
-     *  // need to combine the cid and instanceId in the same feild
-     *  callInfo: an object contains the callback information(cid, vid)
-     *  key: String
-     *  args: args
-     * }
-     */
+    protected boolean addBindingObject(int objectId, XWalkExtensionBindingObject obj) {
+        if (bindingObjectStore.containsKey(objectId)) {
+            Log.w("Extension-" + mName, "Existing binding object:\n" + obj_id);
+            return false;
+        }
+
+        bindingObjectStore.push(obj_id, obj);
+        return true;
+    }
+
+    protected Object findBindingObject(int obj_id) {
+       return bindingObjectStore.getKey(obj_id);
+    }
+
     public void invokeJsCallback(JSONObject callInfo, String key, Object... args) {
-        try {
-            int instanceID = callInfo.getInt("instanceID");
-            JSONObject jsCallInfo = new JSONObject();
-            jsCallInfo.put("cid", callInfo.getInt("cid"));
-            jsCallInfo.put("vid", callInfo.getInt("vid"));
-
-            JSONObject msgOut = new JSONObject();
-            msgOut.put("cmd", "invokeCallback");
-            msgOut.put("callInfo", jsCallInfo);
-            msgOut.put("key", key);
-            msgOut.put("args", ReflectionHelper.objToJSON(args));
-            postMessage(instanceID, msgOut.toString());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        bindingObjectClient.invokeJsCallback(callInfo, key, args);
     }
 
-    /* Helper method to print information in JavaScript console,
-     * mostly for debug purpose.
-     *
-     * Following message will be sent to JavaScript side:
-     * { cmd:"error"
-     *   level: "log", "info", "warn", "error", default is "error"
-     *   msg: String
-     * }
-     */
     public void logJs(int instanceId, String msg, String level) {
-        try {
-            JSONObject msgOut = new JSONObject(); 
-            msgOut.put("cmd", "error");
-            msgOut.put("level", level);
-            msgOut.put("msg", msg);
-            postMessage(instanceId, msgOut.toString());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        bindingObjectClient.logJs(instanceId, msg, level);
     }
 
-    /* Trigger JavaScript handlers in Java side.
-     *
-     * Following message will be sent to JavaScript side:
-     * { cmd:"dispatchEvent"
-     *   type: pointed in "supportedEvents" string array
-     *   data: a JSON data will passed to js
-     * }
-     */
     public void dispatchEvent(String type, Object event) {
-        if (!reflection.isEventSupported(type)) {
-            Log.w("Extension-" + mName, "Unsupport event in extension: " + type);
-            return;
-        }
-        try {
-            JSONObject msgOut = new JSONObject(); 
-            msgOut.put("cmd", "dispatchEvent");
-            msgOut.put("type", type);
-            msgOut.put("event", ReflectionHelper.objToJSON(event));
-            // The event will be broadcasted to all extension instances.
-            broadcastMessage(msgOut.toString());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        bindingObjectClient.dispatch(type, event);
     }
 
-    /* Notify the JavaScript side that some property is updated by Java side.
-     *
-     * Following message will be sent to JavaScript side:
-     * { cmd:"updateProperty"
-     *   name: the name of property need to be updated
-     * }
-     */
     public void updateProperty(String pName) {
-        if (!reflection.hasProperty(pName)) {
-            Log.w("Extension-" + mName, "Unexposed property in extension: " + pName);
-            return;
-        }
-        try {
-            JSONObject msgOut = new JSONObject();
-            msgOut.put("cmd", "updateProperty");
-            msgOut.put("name", pName);
-            // This message will be broadcasted to all extension instances.
-            broadcastMessage(msgOut.toString());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        bindingObjectClient.updateProperty(pName);
     }
 
     /**

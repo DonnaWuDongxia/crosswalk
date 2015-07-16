@@ -18,4 +18,13 @@ public @interface JsApi {
      * methods will ignore this value.
      */
     public boolean isEventList() default false;
+
+    // The exposed name in JS context.
+    // If not set, or set to empty string, name will be the same in Java.
+    public String exportedJsName() default "";
+
+    /*
+     * This property is only meanful for functions/constructors.
+     */
+    public boolean isEntryPoint() default false;
 }

@@ -16,18 +16,26 @@ class ReflectionHelper {
     private static final String TAG = "JsStubReflectHelper";
     private Class<?> myClass;
     private Map<String, MemberInfo> members = new HashMap<String, MemberInfo>();
+    private Map<String, ReflectionHelper> constructorReflections = new HashMap<String, ReflectionHelper>();
     private String[] eventList = null;
+    private MemberInfo entryPoint = null;
     static Set<Class<?>> primitives = new HashSet<>();
 
     public enum MemberType {
         JS_METHOD,
         JS_PROPERTY,
+        JS_CONSTRUCTOR
     }
 
     public class MemberInfo {
         MemberType type;
         boolean isWritable;
         AccessibleObject accesser;
+        boolean isEntryPoint;
+        String jsName;
+        String javaName;
+        //Only for JS_CONSTRUCTOR.
+        Class<?> mainClass;
     }
 
     public ReflectionHelper(Class<?> clazz) {
@@ -38,9 +46,13 @@ class ReflectionHelper {
     void getMemberInfo(AccessibleObject[] accessers, MemberType type) {
         for (AccessibleObject a : accessers) {
 
+            MemberInfo mInfo = new MemberInfo();
+            String name = ((Member) a).getName();
+            String jsName = "";
+            mInfo.javaName = name;
+            mInfo.accesser = a;
             if (a.isAnnotationPresent(JsApi.class)) {
                 JsApi mAnno = a.getAnnotation(JsApi.class);
-                String name = ((Member) a).getName();
 
                 // Get eventList from properties.
                 if (type == MemberType.JS_PROPERTY && mAnno.isEventList()) {
@@ -58,17 +70,51 @@ class ReflectionHelper {
                     continue;
                 }
 
-                MemberInfo mInfo = new MemberInfo();
                 mInfo.type = type;
                 mInfo.isWritable = mAnno.isWritable();
-                mInfo.accesser = a;
-
-                if (members.containsKey(name)) {
-                    Log.w(TAG, "Conflict namespace - " + name);
+                mInfo.isEntryPoint = mAnno.isEntryPoint();
+                jsName = mAnno.exportedJsName();
+                mInfo.jsName = (jsName.length == 0) ? name : jsName; 
+            } else if (a.isAnnotationPresent(JsConstructor.class)) {
+                if (type != MemberType.JS_METHOD) {
+                    Log.w(TAG, "Invalid @JsConstructor on non-function member:" + name);
                     continue;
-                }  
-                members.put(name, mInfo);
+                }
+                JsConstructor cAnno = a.getAnnotation(JsConstructor.class);
+                mInfo.type = MemberType.JS_CONSTRUCTOR;
+                mInfo.isEntryPoint = cAnno.isEntryPoint();
+                mInfo.mainClass = cAnno.getMainClass();
+                // TODO: more detail checking for main class.
+                // Is there a way to throw compile error if main class missing?
+                if (mInfo.mainClass == null) continue;
+
+                jsName = cAnno.exportedJsName();
+                mInfo.jsName = (jsName.length == 0) ? mInfo.mainClass.getName() : jsName; 
+                // Create relections for constructor main classes.
+                constructorReflections.push(jsName, new ReflectionHelper(mInfo.mainClass));
             }
+
+            jsName = mInfo.jsName; 
+            if (mInfo.isEntryPoint) {
+                // Always get the first entry point setting.
+                if (entryPoint != null) {
+                    Log.w(TAG, "Entry point already exist, try to set another:" + jsName);
+                    continue;
+                }
+                // Flag isEntryPoint only meanful for methods.
+                if (type != MemberType.JS_METHOD) {
+                    Log.w(TAG, "Invalid entry point setting on property:" + name);
+                    continue;
+                }
+                // The first entry point will be used.
+                entryPoint = mInfo;
+                continue;
+            }
+            if (members.containsKey(jsName) && (members.get(jsName).type == mInfo.type)) {
+                Log.w(TAG, "Conflict namespace - " + jsName);
+                continue;
+            }  
+            members.put(jsName, mInfo);
         }
     }
 
@@ -93,10 +139,17 @@ class ReflectionHelper {
         return members;
     }
 
+    ReflectionHelper getConstructorReflection(String cName) {
+        if (!constructorReflections.containsKey(cName)) return null;
+
+        return constructorReflections.get(cName);
+    }
+
     Boolean hasMethod(String name) {
         if (!members.containsKey(name)) return false;
 
-        return members.get(name).type == MemberType.JS_METHOD;
+        MemberInfo m = members.get(name);
+        return ((m.type == MemberType.JS_METHOD) || (m.type == MemberType.JS_CONSTRUCTOR));
     }
 
     Boolean hasProperty(String name) {
@@ -214,7 +267,7 @@ class ReflectionHelper {
 
     Object invokeMethod(int instanceID, Object obj, String mName, JSONArray args)
             throws ReflectiveOperationException {
-        if (!(myClass.isInstance(obj) && hasMethod(mName))) {
+        if ((obj !== null) && !(myClass.isInstance(obj) && hasMethod(mName))) {
             throw new UnsupportedOperationException("Not support:" + mName);
         }
         Method m = (Method)members.get(mName).accesser;

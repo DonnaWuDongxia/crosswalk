@@ -46,10 +46,71 @@ var jsStub = function(base, channel) {
       ++nextCallbackId;
     return nextCallbackId;
   };
+
 };
+
+function messageHandler(targetHelper, msg) {
+  if (!msg.cmd)
+    console.warn("No valid Java CMD.");
+  switch (msg.cmd) {
+    case "invokeCallback":
+      if (!msg.callInfo || (typeof msg.callInfo !== "object")) return;
+      targetHelper.invokeCallback(msg.callInfo, msg.key, msg.args);
+      break;
+    case "updateProperty":
+      // Case: property is changed by native and need
+      // to sync its value to JS side.
+      if (targetHelper.properties.hasOwnProperty(msg.name) >= 0) {
+        targetHelper.properties[msg.name] = targetHelper.getNativeProperty(msg.name);
+      }
+      break;
+    case "error":
+      // supported key: log, info, warn, error
+      console[msg.level](msg.msg);
+      break;
+    case "dispatchEvent":
+      if (msg.type) {
+        targetHelper.base.dispatchEvent(msg.type, msg.event);
+      }
+      break;
+    default:
+      console.warn("Unsupported Java CMD:" + msg.cmd);
+  }
+}
+
+function makeExtensionHelper(helper) {
+  var nextObjectId = 1;
+  helper.bindingObjects = [];
+  helper.getObjectId = function() {
+    while (this.bindingObjects[nextObjectId] != undefined)
+      ++nextObjectId;
+    return nextObjectId;
+  };
+
+  // Wrap the object message handler for extension object.
+  helper.handleMessage = function (msg) {
+    var msgObj = JSON.parse(msg);
+    if (msgObj.object_id == 0) {
+      // For extension object itself.
+      messageHandler(helper, msg);
+    } else if (msgObj.object_id > 0) {
+      // For extension object itself.
+      var obj = helper.bindingObjects[object_id]);
+      if (!obj) return;
+      var objHelper = jsStub.getHelper(obj);
+      messageHandler(objHelper, msg);
+    }
+  }
+}
 
 jsStub.create = function(base, channel) {
   var helper = jsStub.getHelper(base, channel);
+
+  // Add some specail properties for extension object only.
+  // These properties will be unavaliable for binding-object helpers.
+  makeExtensionHelper(helper);
+
+  // Set up messageListener for extension object.
   channel.setMessageListener(function (msg) {
     helper.handleMessage(msg);
   });
@@ -84,11 +145,13 @@ function isSerializable(obj) {
 
 jsStub.prototype = {
   "invokeNative": function(name, args, sync) {
+    name = String(name);
+    var isNewInstance = (name.indexOf("+") == 0) ? true : false;
+
     if (!Array.isArray(args)) {
       console.warn("invokeNative: args is not an array.");
       args = Array(args);
     }
-
     // Retain callbacks in JS stub, replace them to related number ID
     var call = [];
     var cid = this.getCallbackId();
@@ -104,14 +167,35 @@ jsStub.prototype = {
     }
 
     var msg = {
-      cmd: "invokeNative",
+      cmd: isNewInstance ? "newInstance" : "invokeNative",
       name: name,
       args: args
     };
+    if(isNewInstance) {
+      msg.bindingObjectId = this.getObjectId();
+      // Use sync channel for newInstance actions.
+      // "newInstance" action should return true/false.
+      return (this.sendSyncMessage(msg)? msg.bindingObjectId : 0);
+    }
     if (sync)
       return this.sendSyncMessage(msg);
     else
       this.postMessage(msg);
+  },
+  // Only Binding object need this lifecycle tracker.
+  "registerLifecycleTracker": function() {
+    Object.defineProperty(this, "_tracker", {
+      value: v8tools.lifecycleTracker(),
+    });
+
+    var objId = this.objectId;
+    this._tracker.destructor = function() {
+      var msg = {
+        cmd: "JsObjectCollected",
+        jsObjectId: objId
+      };
+      this.postMessage(msg);
+    };
   },
   "getNativeProperty": function(name) {
     return this.sendSyncMessage({
@@ -142,40 +226,19 @@ jsStub.prototype = {
       if (obj instanceof Function)
           obj.apply(null, JSON.parse(args));
   },
-  "handleMessage": function(json) {
-    var msg = JSON.parse(json);
-    if (!msg.cmd)
-      console.warn("No valid Java CMD.");
-    switch (msg.cmd) {
-      case "invokeCallback":
-        if (!msg.callInfo || (typeof msg.callInfo !== "object")) return;
-        this.invokeCallback(msg.callInfo, msg.key, msg.args);
-        break;
-      case "updateProperty":
-        // Case: property is changed by native and need
-        // to sync its value to JS side.
-        if (this.properties.hasOwnProperty(msg.name) >= 0) {
-          this.properties[msg.name] = this.getNativeProperty(msg.name);
-        }
-        break;
-      case "error":
-        // supported key: log, info, warn, error
-        console[msg.level](msg.msg);
-        break;
-      case "dispatchEvent":
-        if (msg.type) {
-          this.base.dispatchEvent(msg.type, msg.event);
-        }
-        break;
-      default:
-        console.warn("Unsupported Java CMD:" + msg.cmd);
-    }
-  },
   "sendSyncMessage": function(msg) {
+    // Add objectId for each message.
+    msg["objectId"] = this.objectId ? this.objectId : 0;
+    msg["__constructor"] = this.constructorJsName ? this.constructorJsName : "";
+
     var resultStr = this.channel.internal.sendSyncMessage(JSON.stringify(msg));
     return resultStr.length > 0 ? JSON.parse(resultStr) : undefined;
   },
   "postMessage": function(msg) {
+    // Add objectId for each message.
+    msg["objectId"] = this.objectId;
+    if (this.objectId == 0) msg["__constructor"] = this.constructorJsName;
+
     this.channel.postMessage(JSON.stringify(msg));
   }
 };
